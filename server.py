@@ -3,6 +3,10 @@ import socket
 from Cryptodome.Cipher import AES
 import time
 import os.path
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 
 # closing will close the file and exit the client program
 def closing():
@@ -21,22 +25,38 @@ def sending(fname):
     #     exit()
 
     #f = open(fname.decode('utf-8'), 'rb') #open the requested file
-    f = open('sample.txt', 'r') #open the requested file
+    message = open('sample.txt', 'r') #open the requested file
     buffer = 4000  # Buffer size
     key = b'Sixteen byte key' # key = get_random_bytes(16)
 
     while (True):
-        l = f.read(buffer) #read buffer-sized byte section of the file
-        if len(l) < 1: closing() #if there is no more of the file to be read, close it and end program
-        print("l", l)
-        cipher = AES.new(key, AES.MODE_EAX) #create cipher object for encryption
-        nonce = cipher.nonce #generate nonce number
-        ciphertext, tag = cipher.encrypt_and_digest(l.encode("utf-8")) #encrypt f and generate a tag for integrity-checking
-        print ("sending {}".format(ciphertext))
-        # concatinate the ciphertext, tag, and nonce separate by uniqueword pattern so that they can be separated on the server
-        ciphertext = ciphertext + b'uniqueword' + tag + b'uniqueword' + nonce
-        time.sleep(.01) #required to send each section error-free
-        s.sendto(ciphertext, server_address) #send the ciphertext, tag, and nonce to the server
+        snippet = message.read(buffer) #read buffer-sized byte section of the file
+        if len(snippet) < 1: closing() #if there is no more of the file to be read, close it and end program
+        with open("clientKeys/public_key.pem", "rb") as key_file:
+            public_key = serialization.load_pem_public_key(
+                key_file.read(),
+                backend=default_backend()
+            )
+
+
+            cipher = AES.new(key, AES.MODE_EAX) #create cipher object for encryption
+            nonce = cipher.nonce #generate nonce number
+            ciphertext, tag = cipher.encrypt_and_digest(snippet.encode("utf-8")) #encrypt f and generate a tag for integrity-checking
+            print ("sending {}".format(ciphertext))
+            # concatinate the ciphertext, tag, and nonce separate by uniqueword pattern so that they can be separated on the server
+            ciphertext = ciphertext + b'uniqueword' + tag + b'uniqueword' + nonce
+            key_encrypted = public_key.encrypt(
+                ciphertext,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+            print("snippet ", snippet)
+            print("key_encrypted ", key_encrypted)
+            time.sleep(.01) #required to send each section error-free
+            s.sendto(key_encrypted, server_address) #send the ciphertext, tag, and nonce to the server
 
 #receiving will recieve a file from the client
 def receiving(ciphertext):
