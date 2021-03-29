@@ -1,149 +1,102 @@
 import socket
-import os
-import threading
-import hashlib
-from Crypto import Random
-import Crypto.Cipher.AES as AES
-from Crypto.PublicKey import RSA
-import signal
-from lazyme.string import color_print
+import time
+from Cryptodome.Cipher import AES
+
+# closing will close the file and exit the client program
+def closing():
+    print('closing socket')
+    s.close()
+    exit()
+
+#sending will send a file to the server
+def sending():
+    filename = "sample.pdf"  # File wanting to send
+    f = open(filename, 'rb')  # Open file
+    buf = 4000  # Buffer size
+
+    while (True):
+        l = f.read(buf) #read buffer-sized byte section of the file
+        if len(l) < 1: closing() #if there is no more of the file to be read, close it and end program
+
+        cipher = AES.new(key, AES.MODE_EAX) #create cipher object for encryption
+        nonce = cipher.nonce #generate nonce number
+        ciphertext, tag = cipher.encrypt_and_digest(l) #encrypt f and generate a tag for integrity-checking
+        print('sending {}'.format(ciphertext))
+        # concatinate the ciphertext, tag, and nonce separate by uniqueword pattern so that they can be separated on the server
+        ciphertext = ciphertext + b'uniqueword' + tag + b'uniqueword' + nonce
+        time.sleep(.01) #required to send each section error-free
+        s.sendto(ciphertext, server_address) #send the ciphertext, tag, and nonce to the server
 
 
-def RemovePadding(s):
-    return s.replace('`','')
+#receiving will recieve a file from the server
+def recieving():
+    buf = 4096 #reading buffer size
+    filename = b"files/sample.txt"  # File wanting to recieve
+    fnew = open(filename.decode('utf-8'), 'wb') #file name for new file
 
+    # concatinate isafile with requested filename so it can be distingueshed as a client-recieving command
+    filename = b'isafile' + filename
+    print("sending {}".format(filename))
+    s.sendto(filename, server_address) #send requested filename to server
 
-def Padding(s):
-    return s + ((16 - len(s) % 16) * '`')
+    # Create a UDP/IP socket
+    r = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-
-def ReceiveMessage():
-    while True:
-        emsg = server.recv(1024)
-        msg = RemovePadding(AESKey.decrypt(emsg))
-        if msg == FLAG_QUIT:
-            color_print("\n[!] Server was shutdown by admin", color="red", underline=True)
-            os.kill(os.getpid(), signal.SIGKILL)
-        else:
-            color_print("\n[!] Server's encrypted message \n" + emsg, color="gray")
-            print("\n[!] SERVER SAID : ", msg)
-
-
-def SendMessage():
-    while True:
-        msg = input("[>] YOUR MESSAGE : ")
-        en = AESKey.encrypt(Padding(msg))
-        server.send(str(en))
-        if msg == FLAG_QUIT:
-            os.kill(os.getpid(), signal.SIGKILL)
-        else:
-            color_print("\n[!] Your encrypted message \n" + en, color="gray")
-
-
-if __name__ == "__main__":
-    #objects
-    server = ""
-    AESKey = ""
-    FLAG_READY = "Ready"
-    FLAG_QUIT = "quit"
-    # 10.1.236.227
-    # public key and private key
-    random = Random.new().read
-    RSAkey = RSA.generate(1024, random)
-    public = RSAkey.publickey().exportKey()
-    private = RSAkey.exportKey()
-
-    tmpPub = hashlib.md5(public)
-    my_hash_public = tmpPub.hexdigest()
-
-    print (public)
-    print ("\n",private)
-
-    color_print("[1] server connecting to IP & PORT 127.0.0.1:5556\n[2] Starting up server\n", color="blue", bold=True)
-    host = "127.0.0.1"
-    port = 8081
-
-    with open('private.txt', 'w'):
-        pass
-    with open('public.txt', 'w'):
-        pass
-
-    try:
-        file = open('private.txt', 'w')
-        file.write(private)
-        file.close()
-
-        file = open('public.txt', 'w')
-        file.write(public)
-        file.close()
-    except BaseException:
-        color_print("Key storing in failed", color="red", underline=True)
-
-    check = False
-
-    try:
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.settimeout(10)
-        server.connect((host, port))
-        check = True
-    except BaseException:
-        color_print("\n[!] Check Server Address or Port", color="red", underline=True)
-
-    if check is True:
-        color_print("\n[!] Connection Successful", color="green", bold=True)
-        messageSend = public + (":" + my_hash_public).encode()
-        print("[*] sending ", messageSend)
-        server.send(messageSend)
-        # receive server public key,hash of public,eight byte and hash of eight byte
-        recv_msg = bytearray()
+    # Bind the socket to the port
+    new_server_address = (socket.gethostname(), 10100)
+    r.bind(new_server_address) #bind the socket to the address
+    while (True):
+        #if failed, will throw socket.timeout exception and file/socket will be closed/exited
         try:
-            while 1 :
-                fGet = server.recv(1024)
-                if(len(fGet)>0):
-                    print("got : ",fGet)
-                    recv_msg += fGet
-        except (BlockingIOError, socket.timeout, Exception):
-            print("[*] Recieved a : ", recv_msg)
-        print("[*] Recieved b : ", recv_msg)
-        split = recv_msg.decode().split(":")
-        toDecrypt = split[0]
-        serverPublic = split[1]
-        color_print("\n[!] Server's public key\n", color="blue")
-        print(serverPublic)
-        decrypted = RSA.importKey(private).decrypt(eval(toDecrypt.replace("\r\n", '')))
-        splittedDecrypt = decrypted.split(":")
-        eightByte = splittedDecrypt[0]
-        hashOfEight = splittedDecrypt[1]
-        hashOfSPublic = splittedDecrypt[2]
-        color_print("\n[!] Client's Eight byte key in hash\n", color="blue")
-        print (hashOfEight)
+            while (True):
+                r.settimeout(2) #will throw socket.timeout exception when it isn't recieving anymore data
+                print('waiting for a connection')
 
-        # hashing for checking
-        sess = hashlib.md5(eightByte)
-        session = sess.hexdigest()
+                ciphertext, address = r.recvfrom(buf) #begin recieving file
 
-        hashObj = hashlib.md5(serverPublic)
-        server_public_hash = hashObj.hexdigest()
-        color_print("\n[!] Matching server's public key & eight byte key\n", color="blue")
-        if server_public_hash == hashOfSPublic and session == hashOfEight:
-            # encrypt back the eight byte key with the server public key and send it
-            color_print("\n[!] Sending encrypted session key\n", color="blue")
-            serverPublic = RSA.importKey(serverPublic).encrypt(eightByte, None)
-            server.send(str(serverPublic))
-            # creating 128 bits key with 16 bytes
-            color_print("\n[!] Creating AES key\n", color="blue")
-            key_128 = eightByte + eightByte[::-1]
-            AESKey = AES.new(key_128, AES.MODE_CBC,IV=key_128)
-            # receiving ready
-            serverMsg = server.recv(2048)
-            serverMsg = RemovePadding(AESKey.decrypt(serverMsg))
-            if serverMsg == FLAG_READY:
-                color_print("\n[!] Server is ready to communicate\n", color="blue")
-                serverMsg = input("\n[>] ENTER YOUR NAME : ")
-                server.send(serverMsg)
-                threading_rec = threading.Thread(target=ReceiveMessage)
-                threading_rec.start()
-                threading_send = threading.Thread(target=SendMessage)
-                threading_send.start()
-        else:
-            color_print("\nServer (Public key && Public key hash) || (Session key && Hash of Session key) doesn't match", color="red", underline=True)
+                ciphertext, ignore, nonce = ciphertext.rpartition(b'uniqueword') #separate nonce from ciphertext variable
+                ciphertext, ignore, tag = ciphertext.rpartition(b'uniqueword')   #separate ciphertext and tag from ciphertext variable
+
+                print('received {}'.format(ciphertext))
+                # print('received {}'.format(tag))
+                cipher = AES.new(key, AES.MODE_EAX, nonce=nonce) #create cipher object for decryption
+                plaintext = cipher.decrypt(ciphertext) #decrypt cipher text
+
+                #try to verify message with tag. If its been changed in transit, throw ValueError and close file/socket and exit
+                try:
+                    cipher.verify(tag) #verify the tag to check integrity
+                    print("The message is authentic:", plaintext)
+                except ValueError:
+                    print("Key incorrect or message corrupted")
+                    print('closing')
+                    fnew.close()
+                    s.close()
+                    exit()
+                fnew.write(plaintext) #write data to the new file
+
+        except socket.timeout:
+            print('closing')
+            fnew.close()
+            s.close()
+            r.close()
+            exit()
+    exit()
+
+
+# Create a UDP/IP socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# Bind the socket to the port
+server_address = (socket.gethostname(), 10000)
+# Generate key for AES encryption
+key = b'Sixteen byte key'
+
+cors = input("Are you receiving or sending? (r or s)")
+
+#if sending a file, go to sending function, else if receiving a file go to receiving function, else repeat
+while True:
+    if cors == 'r' or cors == 'R':
+        recieving()
+    elif cors == 's' or cors == 'S':
+        sending()
+    else:
+        cors = input("Enter r or s (r or s)")
