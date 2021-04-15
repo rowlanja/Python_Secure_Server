@@ -13,8 +13,12 @@ def closing():
     s.close()
     exit()
 
+def verify():
+    header = "__verify__"
+    user = "Paulo"
+
 #sending will send a file to the server
-def sending():
+def sending(username):
     filename = "sample.txt"  # File wanting to send
     f = open(filename, 'rb')  # Open file
     buf = 4000  # Buffer size
@@ -22,11 +26,11 @@ def sending():
     while (True):
         l = f.read(buf) #read buffer-sized byte section of the file
         if len(l) < 1: closing() #if there is no more of the file to be read, close it and end program
-
+        l = str.encode("__verify__msg"+username+",") + l
         cipher = AES.new(key, AES.MODE_EAX) #create cipher object for encryption
         nonce = cipher.nonce #generate nonce number
         ciphertext, tag = cipher.encrypt_and_digest(l) #encrypt f and generate a tag for integrity-checking
-        color_print("\n[!] sending : ", ciphertext, color="red", underline=True)
+        color_print("\n[!] sending", color="red", underline=True)
         # concatinate the ciphertext, tag, and nonce separate by uniqueword pattern so that they can be separated on the server
         ciphertext = ciphertext + b'uniqueword' + tag + b'uniqueword' + nonce
         time.sleep(.01) #required to send each section error-free
@@ -79,16 +83,15 @@ def recieving():
                     print("decrypted with keys : ", original_message)
                     original_message, ignore, nonce = original_message.rpartition(b'uniqueword') #separate nonce from ciphertext variable
                     original_message, ignore, tag = original_message.rpartition(b'uniqueword')   #separate ciphertext and tag from ciphertext variable
-
-                    print('format encrypted {}'.format(original_message))
-                    print('tag {}'.format(tag))
+                    print("nonce : ", nonce, " tag : ", tag)
+                    ciphertext, address = r.recvfrom(buf) #begin recieving file
                     cipher = AES.new(key, AES.MODE_EAX, nonce=nonce) #create cipher object for decryption
-                    plaintext = cipher.decrypt(original_message) #decrypt cipher text
-
+                    plaintext = cipher.decrypt(ciphertext) #decrypt cipher text
+                    print("recieved AES msg : ", plaintext)
                     #try to verify message with tag. If its been changed in transit, throw ValueError and close file/socket and exit
                     try:
                         cipher.verify(tag) #verify the tag to check integrity
-                        print("The message is authentic:", plaintext)
+                        print("The download is authentic")
                     except ValueError:
                         print("Key incorrect or message corrupted")
                         print('closing')
@@ -136,7 +139,7 @@ s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_address = (socket.gethostname(), 10000)
 # Generate key for AES encryption
 key = b'Sixteen byte key'
-
+username = input("Please enter your username : ")
 cors = input("Are you receiving or sending? (r or s)")
 
 #if sending a file, go to sending function, else if receiving a file go to receiving function, else repeat
@@ -144,6 +147,6 @@ while True:
     if cors == 'r' or cors == 'R':
         recieving()
     elif cors == 's' or cors == 'S':
-        sending()
+        sending(username)
     else:
         cors = input("Enter r or s (r or s)")

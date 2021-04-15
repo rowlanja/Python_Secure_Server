@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
+from lazyme.string import color_print
 
 # closing will close the file and exit the client program
 def closing():
@@ -38,25 +39,25 @@ def sending(fname):
                 backend=default_backend()
             )
 
-
+            # send the AES nonce and the tag over encrypted channel ecrypted by ublic key
             cipher = AES.new(key, AES.MODE_EAX) #create cipher object for encryption
             nonce = cipher.nonce #generate nonce number
             ciphertext, tag = cipher.encrypt_and_digest(snippet.encode("utf-8")) #encrypt f and generate a tag for integrity-checking
-            print ("sending {}".format(ciphertext))
-            # concatinate the ciphertext, tag, and nonce separate by uniqueword pattern so that they can be separated on the server
-            ciphertext = ciphertext + b'uniqueword' + tag + b'uniqueword' + nonce
-            key_encrypted = public_key.encrypt(
-                ciphertext,
+
+            meta_decrypt = b'uniqueword' + tag + b'uniqueword' + nonce
+            print("nonce : ", nonce, " tag : ", tag)
+            AES_meta_encrypted = public_key.encrypt(
+                meta_decrypt,
                 padding.OAEP(
                     mgf=padding.MGF1(algorithm=hashes.SHA256()),
                     algorithm=hashes.SHA256(),
                     label=None
                 )
             )
-            print("snippet ", snippet)
-            print("key_encrypted ", key_encrypted)
-            time.sleep(.01) #required to send each section error-free
-            s.sendto(key_encrypted, server_address) #send the ciphertext, tag, and nonce to the server
+            s.sendto(AES_meta_encrypted, server_address) #send the ciphertext, tag, and nonce to the server
+
+            time.sleep(.05) #required to send each section error-free
+            s.sendto(ciphertext, server_address) #send the ciphertext, tag, and nonce to the server
 
 #receiving will recieve a file from the client
 def receiving(ciphertext):
@@ -69,20 +70,30 @@ def receiving(ciphertext):
             print('received {}'.format(ciphertext))
             cipher = AES.new(key, AES.MODE_EAX, nonce=nonce) #create cipher object for decryption
             plaintext = cipher.decrypt(ciphertext)           #decrypt cipher text
-
-
+            decoded_plaintext = plaintext.decode()
+            instruction = decoded_plaintext[0:13:1]
+            decoded_plaintext = decoded_plaintext[13:]  # discard extracted information
+            if instruction == "__verify__msg":
+                username = decoded_plaintext.split(",")[0]
+                verified = verification(username)
+            elif instruction == "__verify__add":
+                print("nothing")
+            elif instruction == "__verify__rmv":
+                print("nothing")
+            decoded_plaintext = decoded_plaintext.replace(username+",", "") #removed name
             # try to verify message with tag. If its been changed in transit, throw ValueError and close file/socket and exit
             try:
+                if not verified :
+                    raise ValueError
                 cipher.verify(tag) #verify the tag to check integrity
-                print("The message is authentic:")
+                print("The message is authentic : ", decoded_plaintext, " from : ", username)
             except ValueError:
-                print("Key incorrect or message corrupted")
-                print('closing')
+                print("Key incorrect or message corrupted or access from unverified user")
+                print('Closing')
                 f.close()
                 s.close()
                 exit()
             f.write(plaintext)
-
             s.settimeout(2)
             ciphertext, address = s.recvfrom(buf)
 
@@ -92,7 +103,16 @@ def receiving(ciphertext):
         s.close()
         exit()
 
+def verification(username):
+    f = open("server_files/banned_users.txt")
+    for x in f:
+        if username == x :
+            msg = "Message from bad user : " + username + "\n"
+            color_print(msg, color="red", underline=True)
+            return 0
+    return 1
 
+# def add_user(username):
 
 
 # Create a UDP/IP socket
