@@ -193,10 +193,8 @@ while(True):
         "ignore2 : ", ignore2,
         "filename : ", filename,
     )
-    if verification(name):
-        if ignore2:
-
-                print("filename : ", filename)
-                sending(name, filename)
-        else:
-            receiving(ciphertext)
+    if ignore2 :
+            print("filename : ", filename)
+            sending(name, filename)
+    else:
+        receiving(ciphertext)

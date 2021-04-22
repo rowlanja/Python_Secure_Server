@@ -122,29 +122,29 @@ def pick_file(file_list):
     req_index = input("[!] Enter index of requested file : ")
     return file_list[int(req_index)]
 # #create our public/private keys for the client
-# private_key = rsa.generate_private_key(
-#     public_exponent=65537,
-#     key_size=2048,
-#     backend=default_backend()
-# )
-# public_key = private_key.public_key()
-# #store our public key & private key
-# pem = private_key.private_bytes(
-#     encoding=serialization.Encoding.PEM,
-#     format=serialization.PrivateFormat.PKCS8,
-#     encryption_algorithm=serialization.NoEncryption()
-# )
-#
-# with open('clientKeys/private_key.pem', 'wb') as f:
-#     f.write(pem)
-#
-# pem = public_key.public_bytes(
-#     encoding=serialization.Encoding.PEM,
-#     format=serialization.PublicFormat.SubjectPublicKeyInfo
-# )
-#
-# with open('clientKeys/public_key.pem', 'wb') as f:
-#     f.write(pem)
+private_key = rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=2048,
+    backend=default_backend()
+)
+public_key = private_key.public_key()
+#store our public key & private key
+pem = private_key.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption()
+)
+
+with open('clientKeys/server_keys/private_key.pem', 'wb') as f:
+    f.write(pem)
+
+pem = public_key.public_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PublicFormat.SubjectPublicKeyInfo
+)
+
+with open('clientKeys/server_keys/public_key.pem', 'wb') as f:
+    f.write(pem)
 
 #print("keys : ", private_key, public_key)
 # Create a UDP/IP socket
@@ -165,8 +165,9 @@ while True:
         print("requesting ", file_choice)
         file_list = recieving(username, ("server_files/files/"+file_choice))
     elif cors == 's' or cors == 'S':
-        # upload_filename = input("Upload : ")
-        upload_filename = 'sample_rmv_user.txt'
+        upload_filename = input("Upload : ")
+        # upload_filename = 'sample_rmv_user.txt' # to rmv user
+        # upload_filename = 'sample_rmv_user.txt' # to add user
         sending(username, upload_filename)
     else:
         cors = input("Enter r or s (r or s)")
