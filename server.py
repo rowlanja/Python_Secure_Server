@@ -64,8 +64,8 @@ def sending(name, fname):
 def receiving(ciphertext):
     try:
         while (True):
-            ciphertext, ignore, nonce = ciphertext.rpartition(b'uniqueword') #separate nonce from ciphertext variable
-            ciphertext, ignore, tag = ciphertext.rpartition(b'uniqueword')   #separate ciphertext and tag from ciphertext variable
+            nonce, tag = meta_decrypt(ciphertext)
+            ciphertext, address = s.recvfrom(buf) #recieve ciphertext sent
 
             #print('received {}'.format(ciphertext))
             cipher = AES.new(key, AES.MODE_EAX, nonce=nonce) #create cipher object for decryption
@@ -166,6 +166,27 @@ def rmv_user(new_user_info):
               f.write("%s" % item)
     print("[!] User removed ", username)
 
+def meta_decrypt(meta_decrypt):
+    with open("server_files/server_keys/private_key.pem", "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+        AES_meta = private_key.decrypt(
+            meta_decrypt,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        AES_meta = AES_meta[10:]
+        tag = AES_meta[:AES_meta.find(b'uniqueword')]   #separate ciphertext and tag from ciphertext variable
+        AES_meta = AES_meta[10:]
+        nonce = AES_meta[(AES_meta.find(b'uniqueword')+10):] #separate nonce from ciphertext variable
+        return nonce, tag
+
 
 # Create a UDP/IP socket
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -182,19 +203,15 @@ key = b'Sixteen byte key' # Generate key for AES encryption
 print('waiting for a connection')
 while(True):
     ciphertext, address = s.recvfrom(buf) #recieve ciphertext sent
+    print("recived ciphertext : ", ciphertext)
     name_index = ciphertext.find(b'isafile')
     name = ciphertext[:name_index]
-    print('recieved : ',ciphertext)
     #if there is an isafile in a message, call sending function, else call receiving function
     ignore1, ignore2, filename = ciphertext.rpartition(b'isafile')
-    print("the bitch says : ",
-        "name : ", name,
-        "ignore1 : ", ignore1,
-        "ignore2 : ", ignore2,
-        "filename : ", filename,
-    )
     if ignore2 :
-            print("filename : ", filename)
-            sending(name, filename)
+        print("sending : ", filename)
+        sending(name, filename)
     else:
+        print("recieving ")
+
         receiving(ciphertext)

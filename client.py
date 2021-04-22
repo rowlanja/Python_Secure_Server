@@ -26,15 +26,32 @@ def sending(username, upload_filename):
     while (True):
         l = f.read(buf) #read buffer-sized byte section of the file
         if len(l) < 1: closing() #if there is no more of the file to be read, close it and end program
-        l = str.encode("__verify__msg"+username+","+upload_filename+",") + l
-        cipher = AES.new(key, AES.MODE_EAX) #create cipher object for encryption
-        nonce = cipher.nonce #generate nonce number
-        ciphertext, tag = cipher.encrypt_and_digest(l) #encrypt f and generate a tag for integrity-checking
-        color_print("\n[!] sending", color="red", underline=True)
-        # concatinate the ciphertext, tag, and nonce separate by uniqueword pattern so that they can be separated on the server
-        ciphertext = ciphertext + b'uniqueword' + tag + b'uniqueword' + nonce
-        time.sleep(.01) #required to send each section error-free
-        s.sendto(ciphertext, server_address) #send the ciphertext, tag, and nonce to the server
+        with open("server_files/server_keys/public_key.pem", "rb") as key_file:
+            public_key = serialization.load_pem_public_key(
+                key_file.read(),
+                backend=default_backend()
+            )
+
+            l = str.encode("__verify__msg"+username+","+upload_filename+",") + l
+            cipher = AES.new(key, AES.MODE_EAX) #create cipher object for encryption
+            nonce = cipher.nonce #generate nonce number
+            ciphertext, tag = cipher.encrypt_and_digest(l) #encrypt f and generate a tag for integrity-checking
+            meta_decrypt = b'uniqueword' + tag + b'uniqueword' + nonce
+            print("decrypted : ", meta_decrypt)
+            AES_meta_encrypted = public_key.encrypt(
+                meta_decrypt,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            )
+            color_print("\n[!] sending", color="red", underline=True)
+            # concatinate the ciphertext, tag, and nonce separate by uniqueword pattern so that they can be separated on the server
+            print("meta decrypt : ",AES_meta_encrypted)
+            s.sendto(AES_meta_encrypted, server_address) #send the ciphertext, tag, and nonce to the server
+            time.sleep(.05) #required to send each section error-free
+            s.sendto(ciphertext, server_address) #send the ciphertext, tag, and nonce to the server
 
 
 #receiving will recieve a file from the server
@@ -165,7 +182,9 @@ while True:
         print("requesting ", file_choice)
         file_list = recieving(username, ("server_files/files/"+file_choice))
     elif cors == 's' or cors == 'S':
-        upload_filename = input("Upload : ")
+        # upload_filename = input("Upload : ")
+
+        upload_filename = "upload.txt"
         # upload_filename = 'sample_rmv_user.txt' # to rmv user
         # upload_filename = 'sample_rmv_user.txt' # to add user
         sending(username, upload_filename)
