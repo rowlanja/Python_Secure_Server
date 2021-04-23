@@ -24,7 +24,6 @@ def sending(name, fname):
     #     exit()
 
     #f = open(fname.decode('utf-8'), 'rb') #open the requested file
-    print("sending : ", fname)
     message = open(fname.decode(), 'r') #open the requested file
     buffer = 4000  # Buffer size
     key = b'Sixteen byte key' # key = get_random_bytes(16)
@@ -32,7 +31,7 @@ def sending(name, fname):
     while (True):
         snippet = message.read(buffer) #read buffer-sized byte section of the file
         user_pem = 'server_files/keys/'+name.decode()+'.pem'
-        print('using pem file to encrypt : ', user_pem)
+        print('[!] using pem file to encrypt : ', user_pem)
         if len(snippet) < 1: break#if there is no more of the file to be read, close it and end program
         with open(user_pem, "rb") as key_file:
             public_key = serialization.load_pem_public_key(
@@ -46,7 +45,7 @@ def sending(name, fname):
             ciphertext, tag = cipher.encrypt_and_digest(snippet.encode("utf-8")) #encrypt f and generate a tag for integrity-checking
 
             meta_decrypt = b'uniqueword' + tag + b'uniqueword' + nonce
-            print("nonce : ", nonce, " tag : ", tag)
+            print("[!] nonce : ", nonce, " tag : ", tag)
             AES_meta_encrypted = public_key.encrypt(
                 meta_decrypt,
                 padding.OAEP(
@@ -73,24 +72,31 @@ def receiving(ciphertext):
             decoded_plaintext = plaintext.decode()
             instruction = decoded_plaintext[0:13:1]     # find out what instruction
             decoded_plaintext = decoded_plaintext[13:]  # discard extracted information
-            print('instruction : ', instruction)
+            print('[*] instruction : ', instruction)
             if instruction == "__verify__msg":
                 username = decoded_plaintext[:decoded_plaintext.find(",")]  # find username appended to front of original_mesage
                 decoded_plaintext = decoded_plaintext.replace(username+',', '')                 # discard username
                 filename = decoded_plaintext[:decoded_plaintext.find(",")]  # find filename appended to front of original_message
                 decoded_plaintext = decoded_plaintext.replace(filename+',', '')                 # discard filename
                 print("username : ", username, " filename : ", filename)
-                verified = verification(username.encode())
+                try :
+                    verified = verification(username.encode())
+                    if not verified :
+                        raise ValueError
+                except ValueError:
+                    print("Key incorrect or message corrupted or access from unverified user")
+                    print('Not processing request!')
+                    return
             if decoded_plaintext[0:13:1] == "__verify__add":
                 decoded_plaintext = decoded_plaintext[13:]+" "  # find username appended to front of original_mesage
                 print("adding : ", decoded_plaintext)
                 add_user(decoded_plaintext)
-                verified = verification(username.encode())
+                return
             elif decoded_plaintext[0:13:1] == "__verify__rmv":
                 decoded_plaintext = decoded_plaintext[13:]+" "  # find username appended to front of original_mesage
                 print("removing : ", decoded_plaintext)
                 rmv_user(decoded_plaintext)
-                verified = verification(username.encode())
+                return
             # try to verify message with tag. If its been changed in transit, throw ValueError and close file/socket and exit
             try:
                 if not verified :
@@ -137,11 +143,14 @@ def add_user(new_user_info):
     username = new_user_info[:(new_user_info.find('__verify__key')-1)].strip()
     print('un : ', username)
     key = new_user_info[key_start:]
+
+
+    write_verified = open("server_files/verified_users.txt", 'a')
+    write_verified.write(username + "\n")
+
     new_user_pem_file = 'server_files/keys/' + username + '.pem'
     new_user_pem_file = new_user_pem_file.strip()
-    write_verified = open("server_files/verified_users.txt", 'a')
     write_key = open(new_user_pem_file, 'wb')
-    write_verified.write(username + "\n")
     write_key.write(key.encode())
 
 def rmv_user(new_user_info):
@@ -160,7 +169,6 @@ def rmv_user(new_user_info):
     print("read : ", read)
     with open(verified_file, 'w') as f:
       for item in read:
-          print(item.strip(), " vs ",username )
           if item.strip() != username :
               print("writing : ", item)
               f.write("%s" % item)
@@ -200,18 +208,24 @@ buf = 4096 #reading buffer size
 key = b'Sixteen byte key' # Generate key for AES encryption
 
 
-print('waiting for a connection')
+print('[*]Waiting for a connection')
 while(True):
     ciphertext, address = s.recvfrom(buf) #recieve ciphertext sent
-    print("recived ciphertext : ", ciphertext)
+    print("[*]Recived ciphertext")
     name_index = ciphertext.find(b'isafile')
     name = ciphertext[:name_index]
     #if there is an isafile in a message, call sending function, else call receiving function
     ignore1, ignore2, filename = ciphertext.rpartition(b'isafile')
     if ignore2 :
-        print("sending : ", filename)
-        sending(name, filename)
+        try :
+            verified = verification(name)
+            if not verified :
+                raise ValueError
+            else :
+                print("[*] sending : ", filename)
+                sending(name, filename)
+        except ValueError:
+            print("Key incorrect or message corrupted or access from unverified user")
+            print('Not processing request!')
     else:
-        print("recieving ")
-
         receiving(ciphertext)

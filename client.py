@@ -46,9 +46,11 @@ def sending(username, upload_filename):
                     label=None
                 )
             )
-            color_print("\n[!] sending", color="red", underline=True)
+            color_print("\n[!] sending", color="green", underline=True)
             # concatinate the ciphertext, tag, and nonce separate by uniqueword pattern so that they can be separated on the server
-            print("meta decrypt : ",AES_meta_encrypted)
+            print("AES nonce + tag : ",AES_meta_encrypted)
+            print("Ciphertext : ",ciphertext)
+
             s.sendto(AES_meta_encrypted, server_address) #send the ciphertext, tag, and nonce to the server
             time.sleep(.05) #required to send each section error-free
             s.sendto(ciphertext, server_address) #send the ciphertext, tag, and nonce to the server
@@ -79,7 +81,8 @@ def recieving(username, filename):
         try:
             while (True):
                 #read in the public key from teh key files
-                with open("clientKeys/private_key.pem", "rb") as key_file:
+                ciphertext, address = r.recvfrom(buf) #begin recieving file
+                with open("clientKeys/different_keys/"+username+"_private_key.pem", "rb") as key_file:
                     private_key = serialization.load_pem_private_key(
                         key_file.read(),
                         password=None,
@@ -87,8 +90,7 @@ def recieving(username, filename):
                     )
                     r.settimeout(2) #will throw socket.timeout exception when it isn't recieving anymore data
 
-                    ciphertext, address = r.recvfrom(buf) #begin recieving file
-                    print("recived ciphertext : ", ciphertext, "\nfrom : ", address)
+                    print("[!] recived ciphertext : ", ciphertext, "\nfrom : ", address)
                     original_message = private_key.decrypt(
                         ciphertext,
                         padding.OAEP(
@@ -100,7 +102,7 @@ def recieving(username, filename):
                     #print("decrypted with keys : ", original_message)
                     original_message, ignore, nonce = original_message.rpartition(b'uniqueword') #separate nonce from ciphertext variable
                     original_message, ignore, tag = original_message.rpartition(b'uniqueword')   #separate ciphertext and tag from ciphertext variable
-                    #print("nonce : ", nonce, " tag : ", tag)
+                    print("[!] nonce : ", nonce, " tag : ", tag)
                     ciphertext, address = r.recvfrom(buf) #begin recieving file
                     cipher = AES.new(key, AES.MODE_EAX, nonce=nonce) #create cipher object for decryption
                     plaintext = cipher.decrypt(ciphertext) #decrypt cipher text
@@ -138,30 +140,36 @@ def pick_file(file_list):
         print("[%d] %s" % (index, file_list[index]))
     req_index = input("[!] Enter index of requested file : ")
     return file_list[int(req_index)]
-# #create our public/private keys for the client
-private_key = rsa.generate_private_key(
-    public_exponent=65537,
-    key_size=2048,
-    backend=default_backend()
-)
-public_key = private_key.public_key()
-#store our public key & private key
-pem = private_key.private_bytes(
-    encoding=serialization.Encoding.PEM,
-    format=serialization.PrivateFormat.PKCS8,
-    encryption_algorithm=serialization.NoEncryption()
-)
+# # #create our public/private keys for the client
+def addUser(username):
+    username = 'Aoife'
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+    public_key = private_key.public_key()
+    #store our public key & private key
+    pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
 
-with open('clientKeys/server_keys/private_key.pem', 'wb') as f:
-    f.write(pem)
+    with open('clientKeys/different_keys/'+username+'_private_key.pem', 'wb') as f:
+        f.write(pem)
 
-pem = public_key.public_bytes(
-    encoding=serialization.Encoding.PEM,
-    format=serialization.PublicFormat.SubjectPublicKeyInfo
-)
+    pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
 
-with open('clientKeys/server_keys/public_key.pem', 'wb') as f:
-    f.write(pem)
+    with open('clientKeys/different_keys/'+username+'_public_key.pem', 'wb') as f:
+        f.write(pem)
+    with open('client_files/sample_add_user.txt', 'wb') as f:
+        f.write(('__verify__add'+(username+'\n')+'__verify__key\n').encode())
+        f.write(pem)
+
 
 #print("keys : ", private_key, public_key)
 # Create a UDP/IP socket
@@ -173,20 +181,21 @@ key = b'Sixteen byte key'
 # username = input("Please enter your username : ")
 # cors = input("Are you receiving or sending? (r or s)")
 username = 'Joeseph'
-cors = 'r'
+cors = 's'
 #if sending a file, go to sending function, else if receiving a file go to receiving function, else repeat
 while True:
     if cors == 'r' or cors == 'R':
         file_list = recieving(username, "server_files/file_list.txt")
         file_choice = pick_file(file_list)
         print("requesting ", file_choice)
-        file_list = recieving(username, ("server_files/files/"+file_choice))
+        recieving(username, ("server_files/files/"+file_choice))
     elif cors == 's' or cors == 'S':
         # upload_filename = input("Upload : ")
 
         upload_filename = "upload.txt"
         # upload_filename = 'sample_rmv_user.txt' # to rmv user
-        # upload_filename = 'sample_rmv_user.txt' # to add user
+        # addUser("Aoife")
+        # upload_filename = 'sample_add_user.txt' # to add user
         sending(username, upload_filename)
     else:
         cors = input("Enter r or s (r or s)")
